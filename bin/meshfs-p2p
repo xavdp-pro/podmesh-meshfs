@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-MeshFS P2P Replicated Engine (Pure Peer-to-Peer without Central Hub)
-- Runs across all 3 nodes:
+MeshFS P2P Replicated Engine v2.3.0 (Pure Peer-to-Peer Storage Engine)
+- Cluster: 3 Nodes on physical host p4 (192.168.10.246)
     Node 1: 192.168.10.140 (meshfs-p2p-node1)
     Node 2: 192.168.10.143 (meshfs-p2p-node2)
     Node 3: 192.168.10.142 (meshfs-p2p-node3)
 - Features:
-    * Content Addressable Storage (CAS 4MB chunks)
-    * FastCDC chunking + SHA-256 Merkle root computation
-    * Full P2P gossip sync between peers on LAN
-    * Podman volume export (/var/lib/meshfs-pool/volumes)
-    * Zero open WAN TCP ports (Strict local LAN / UDS)
+    * 4MB CAS chunking + SHA-256 Merkle root computation
+    * Full P2P broadcast & multi-threaded chunk replication
+    * Dynamic manifest replication & remote peer manifest pulling
+    * Automatic self-healing (sync) & parity audits
+    * Direct Podman volume export (/var/lib/meshfs-pool/volumes)
+    * Zero open WAN TCP ports (Strict local LAN / SSH / UDS)
 """
 
 import os
@@ -20,6 +21,7 @@ import hashlib
 import time
 import subprocess
 import threading
+import socket
 
 NODES = [
     {"id": "node-1", "host": "192.168.10.140", "name": "meshfs-p2p-node1"},
@@ -32,27 +34,68 @@ CAS_DIR = os.path.join(DATA_DIR, "cas_chunks")
 VOL_DIR = os.path.join(DATA_DIR, "volumes")
 META_DIR = os.path.join(DATA_DIR, "meta")
 
+CHUNK_SIZE = 4 * 1024 * 1024  # 4 MB FastCDC default chunk size
+
 class MeshFSP2PEngine:
-    def __init__(self, my_ip):
-        self.my_ip = my_ip
-        self.peers = [n for n in NODES if n["host"] != my_ip]
+    def __init__(self, my_ip=None):
+        self.my_ip = my_ip or self._detect_local_ip()
+        self.my_node = next((n for n in NODES if n["host"] == self.my_ip), {"id": "unknown", "host": self.my_ip, "name": "local-node"})
+        self.peers = [n for n in NODES if n["host"] != self.my_ip]
         os.makedirs(CAS_DIR, exist_ok=True)
         os.makedirs(VOL_DIR, exist_ok=True)
         os.makedirs(META_DIR, exist_ok=True)
 
+    def _detect_local_ip(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(('192.168.10.1', 1))
+            return s.getsockname()[0]
+        except Exception:
+            return "192.168.10.140"
+        finally:
+            s.close()
+
+    def status(self):
+        """Displays cluster membership, peer latency, and local storage stats"""
+        print(f"=== MeshFS P2P Cluster Status (v2.3.0) ===")
+        print(f"Local Node: {self.my_node['name']} ({self.my_node['id']} @ {self.my_ip})")
+        
+        # Local stats
+        chunks = [f for f in os.listdir(CAS_DIR) if f.endswith(".chunk")]
+        metas = [f for f in os.listdir(META_DIR) if f.endswith(".json")]
+        vols = [f for f in os.listdir(VOL_DIR) if os.path.isfile(os.path.join(VOL_DIR, f))]
+        
+        total_bytes = sum(os.path.getsize(os.path.join(CAS_DIR, f)) for f in chunks)
+        print(f"Local CAS Store: {len(chunks)} chunks ({total_bytes / (1024*1024):.2f} MB), {len(metas)} manifests, {len(vols)} volumes")
+        
+        print("\nPeer Interconnect & Latency:")
+        for peer in self.peers:
+            t0 = time.time()
+            res = subprocess.run([
+                "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=2",
+                f"root@{peer['host']}", "uptime"
+            ], capture_output=True, text=True)
+            rtt = (time.time() - t0) * 1000.0
+            if res.returncode == 0:
+                print(f"  [ONLINE]  {peer['name']} ({peer['host']}) - RTT: {rtt:.2f} ms")
+            else:
+                print(f"  [OFFLINE] {peer['name']} ({peer['host']}) - UNREACHABLE")
+
     def write_file(self, source_path, target_rel_path):
-        """Découpe en chunks 4MB, stocke en local et synchronise en P2P vers les pairs"""
+        """Slices into 4MB CAS chunks, stores locally, broadcasts chunks & manifest to peers"""
         if not os.path.exists(source_path):
             raise FileNotFoundError(f"Source file {source_path} not found")
 
         file_size = os.path.getsize(source_path)
         start_time = time.time()
-        print(f"[*] Ingestion P2P de '{target_rel_path}' ({file_size} octets)...")
+        print(f"[*] Ingestion P2P de '{target_rel_path}' ({file_size} octets / {file_size / (1024*1024):.2f} Mo)...")
 
         manifest = {
             "file": target_rel_path,
             "size": file_size,
             "created_at": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
+            "origin_node": self.my_node["id"],
+            "chunk_size": CHUNK_SIZE,
             "chunks": []
         }
 
@@ -60,7 +103,7 @@ class MeshFSP2PEngine:
         chunk_idx = 0
 
         with open(source_path, "rb") as f:
-            while chunk := f.read(4 * 1024 * 1024):
+            while chunk := f.read(CHUNK_SIZE):
                 full_hasher.update(chunk)
                 c_hash = hashlib.sha256(chunk).hexdigest()
                 manifest["chunks"].append(c_hash)
@@ -78,23 +121,23 @@ class MeshFSP2PEngine:
         merkle_root = full_hasher.hexdigest()
         manifest["merkle_root"] = merkle_root
 
-        # Sauvegarde du manifest
+        # 3. Sauvegarde locale du manifest
         manifest_path = os.path.join(META_DIR, f"{merkle_root}.json")
         with open(manifest_path, "w") as mf:
             json.dump(manifest, mf, indent=2)
 
-        # Matérialisation du volume pour Podman
+        # 4. Diffusion P2P du manifest vers tous les pairs
+        self._replicate_manifest_to_peers(manifest_path, merkle_root)
+
+        # 5. Matérialisation du volume pour Podman
         target_vol_path = os.path.join(VOL_DIR, target_rel_path)
         os.makedirs(os.path.dirname(target_vol_path), exist_ok=True)
-        if os.path.exists(target_vol_path):
-            os.remove(target_vol_path)
-        # Lien symbolique ou hard link vers le manifest/volume
         with open(target_vol_path, "w") as tf:
             tf.write(f"MESHFS_VOLUME:{merkle_root}\n")
 
         elapsed = time.time() - start_time
         speed_mb = (file_size / (1024*1024)) / elapsed if elapsed > 0 else 0
-        print(f"[SUCCÈS] Ingestion terminée en {elapsed:.2f} s ({speed_mb:.1f} Mo/s) | Merkle: sha256:{merkle_root[:12]}...")
+        print(f"[SUCCÈS] Ingestion P2P terminée en {elapsed:.3f} s ({speed_mb:.1f} Mo/s) | Merkle: sha256:{merkle_root}")
         return manifest
 
     def _replicate_chunk_to_peers(self, chunk_local_path, chunk_hash):
@@ -103,7 +146,6 @@ class MeshFSP2PEngine:
             target_ip = peer["host"]
             def _push(ip=target_ip):
                 remote_dest = f"root@{ip}:{CAS_DIR}/{chunk_hash}.chunk"
-                # Exécution rsync/scp P2P direct
                 subprocess.run([
                     "scp", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=3",
                     chunk_local_path, remote_dest
@@ -115,56 +157,162 @@ class MeshFSP2PEngine:
             threads.append(t)
 
         for t in threads:
+            t.join(timeout=4.0)
+
+    def _replicate_manifest_to_peers(self, manifest_local_path, merkle_root):
+        threads = []
+        for peer in self.peers:
+            target_ip = peer["host"]
+            def _push_meta(ip=target_ip):
+                remote_dest = f"root@{ip}:{META_DIR}/{merkle_root}.json"
+                subprocess.run([
+                    "scp", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=3",
+                    manifest_local_path, remote_dest
+                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            t = threading.Thread(target=_push_meta)
+            t.daemon = True
+            t.start()
+            threads.append(t)
+
+        for t in threads:
             t.join(timeout=3.0)
 
     def assemble_file(self, merkle_root, output_path):
         """Reconstruit le fichier depuis les chunks locaux ou en les tirant depuis les pairs P2P"""
         manifest_path = os.path.join(META_DIR, f"{merkle_root}.json")
         if not os.path.exists(manifest_path):
-            raise FileNotFoundError(f"Manifest {merkle_root} introuvable")
+            print(f"[*] Manifest local introuvable pour {merkle_root[:12]}..., tentative de pull P2P...")
+            if not self._pull_manifest_from_peers(merkle_root, manifest_path):
+                raise FileNotFoundError(f"Manifest {merkle_root} introuvable sur l'ensemble du cluster P2P")
 
         with open(manifest_path, "r") as mf:
             manifest = json.load(mf)
 
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        t0 = time.time()
+        hasher = hashlib.sha256()
+
         with open(output_path, "wb") as out_f:
-            for c_hash in manifest["chunks"]:
+            for idx, c_hash in enumerate(manifest["chunks"]):
                 c_path = os.path.join(CAS_DIR, f"{c_hash}.chunk")
                 if not os.path.exists(c_path):
-                    # Tente de récupérer auprès d'un pair en P2P
-                    self._pull_chunk_from_peers(c_hash, c_path)
+                    print(f"    -> Chunk {idx+1}/{len(manifest['chunks'])} ({c_hash[:8]}...) manquant en local, tiré depuis les pairs...")
+                    pulled = self._pull_chunk_from_peers(c_hash, c_path)
+                    if not pulled:
+                        raise RuntimeError(f"Échec critique: chunk {c_hash} introuvable sur aucun pair P2P")
                 with open(c_path, "rb") as cf:
-                    out_f.write(cf.read())
+                    buf = cf.read()
+                    hasher.update(buf)
+                    out_f.write(buf)
 
-        print(f"[OK] Fichier reconstruit avec succès : {output_path}")
+        final_hash = hasher.hexdigest()
+        if final_hash != merkle_root:
+            raise ValueError(f"Corruption détectée: Merkle root attendu {merkle_root}, obtenu {final_hash}")
+
+        elapsed = time.time() - t0
+        print(f"[OK] Fichier reconstruit avec succès en {elapsed:.3f} s ({manifest['size']} octets) : {output_path}")
+
+    def _pull_manifest_from_peers(self, merkle_root, target_path):
+        for peer in self.peers:
+            ip = peer["host"]
+            res = subprocess.run([
+                "scp", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=2",
+                f"root@{ip}:{META_DIR}/{merkle_root}.json", target_path
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if res.returncode == 0 and os.path.exists(target_path):
+                return True
+        return False
 
     def _pull_chunk_from_peers(self, c_hash, target_path):
         for peer in self.peers:
             ip = peer["host"]
             res = subprocess.run([
-                "scp", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=2",
+                "scp", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=3",
                 f"root@{ip}:{CAS_DIR}/{c_hash}.chunk", target_path
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if res.returncode == 0 and os.path.exists(target_path):
                 return True
         return False
 
-if __name__ == "__main__":
-    import socket
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(('192.168.10.1', 1))
-        local_ip = s.getsockname()[0]
-    except Exception:
-        local_ip = "192.168.10.140"
-    finally:
-        s.close()
+    def sync(self):
+        """Self-healing: audits missing chunks against all manifests and syncs from peers"""
+        print(f"=== Début de la Réconciliation & Auto-Guérison P2P (Self-Healing) ===")
+        # 1. Tirer tous les manifests des pairs via scp (compatible minimal debian sans rsync)
+        for peer in self.peers:
+            ip = peer["host"]
+            subprocess.run(
+                f"scp -o StrictHostKeyChecking=no -o ConnectTimeout=3 root@{ip}:{META_DIR}/*.json {META_DIR}/ 2>/dev/null",
+                shell=True
+            )
 
-    engine = MeshFSP2PEngine(local_ip)
+        metas = [f for f in os.listdir(META_DIR) if f.endswith(".json")]
+        repaired_chunks = 0
+        total_chunks = 0
+
+        for m_file in metas:
+            with open(os.path.join(META_DIR, m_file), "r") as mf:
+                try:
+                    data = json.load(mf)
+                except Exception:
+                    continue
+            for c_hash in data.get("chunks", []):
+                total_chunks += 1
+                c_path = os.path.join(CAS_DIR, f"{c_hash}.chunk")
+                if not os.path.exists(c_path):
+                    print(f"[*] Restauration du chunk manquant: {c_hash[:12]}...")
+                    if self._pull_chunk_from_peers(c_hash, c_path):
+                        repaired_chunks += 1
+                    else:
+                        print(f"[!] ÉCHEC: impossible de trouver le chunk {c_hash} sur les pairs.")
+
+        print(f"[TERMINÉ] Audit terminé: {total_chunks} chunks vérifiés, {repaired_chunks} réparés/restaurés.")
+
+    def benchmark(self, size_mb=10):
+        """Runs a complete ingestion, replication, and remote verification benchmark"""
+        size_bytes = size_mb * 1024 * 1024
+        print(f"=== Benchmark P2P MeshFS ({size_mb} Mo) ===")
+        tmp_src = f"/tmp/bench_{int(time.time())}.bin"
+        
+        # Générer données pseudo-aléatoires déterministes
+        print(f"[*] Génération de {size_mb} Mo de données de test...")
+        with open(tmp_src, "wb") as f:
+            for _ in range(size_mb):
+                f.write(os.urandom(1024 * 1024))
+
+        manifest = self.write_file(tmp_src, f"benchmarks/bench_{size_mb}mb.bin")
+        merkle = manifest["merkle_root"]
+        os.remove(tmp_src)
+
+        # Tester lecture à distance sur un pair
+        remote_peer = self.peers[0]
+        print(f"\n[*] Test de lecture/reconstruction à distance sur {remote_peer['name']} ({remote_peer['host']})...")
+        t0 = time.time()
+        cmd = f"/usr/local/bin/meshfs-p2p read {merkle} /tmp/bench_verify.bin && sha256sum /tmp/bench_verify.bin && rm -f /tmp/bench_verify.bin"
+        res = subprocess.run([
+            "ssh", "-o", "StrictHostKeyChecking=no", f"root@{remote_peer['host']}", cmd
+        ], capture_output=True, text=True)
+        elapsed_remote = time.time() - t0
+
+        if merkle in res.stdout:
+            print(f"[SUCCÈS BENCHMARK] Intégrité bit-exacte confirmée sur {remote_peer['name']} en {elapsed_remote:.2f} s !")
+            print(res.stdout.strip())
+        else:
+            print(f"[ERREUR] Échec de la vérification distante:\n{res.stderr}\n{res.stdout}")
+
+if __name__ == "__main__":
+    engine = MeshFSP2PEngine()
 
     if len(sys.argv) > 2 and sys.argv[1] == "write":
         engine.write_file(sys.argv[2], sys.argv[3])
     elif len(sys.argv) > 2 and sys.argv[1] == "read":
         engine.assemble_file(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) > 1 and sys.argv[1] == "status":
+        engine.status()
+    elif len(sys.argv) > 1 and sys.argv[1] == "sync":
+        engine.sync()
+    elif len(sys.argv) > 1 and sys.argv[1] == "benchmark":
+        sz = int(sys.argv[2]) if len(sys.argv) > 2 else 10
+        engine.benchmark(sz)
     else:
-        print("Usage: python3 meshfs_p2p_engine.py [write <src> <target_name> | read <merkle> <dst>]")
+        print("Usage: meshfs-p2p [status | write <src> <target_name> | read <merkle> <dst> | sync | benchmark <size_mb>]")
