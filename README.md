@@ -1,7 +1,16 @@
 # podmesh-meshfs (v2.3.0)
 
+> *"Look at what the modern Linux kernel already offers natively and harness it without intermediaries."* — Shaper OS Law  
 > **Autonomous 4 MB Content-Addressable Distributed & Peer-to-Peer Storage Engine for Podman, Proxmox VE, and Linux Hosts.**  
 > *Ultra-lightweight sovereign alternative to CephFS: scales from 1 standalone node to N-node clusters with SHA-256 deduplication, Merkle Copy-on-Write snapshots, FUSE POSIX mounting, and zero-server P2P gossip replication.*
+
+---
+
+## Technical Documentation & Guides
+
+- **[Genesis Story](GENESIS.md)**: How solving immutable container backup in PMBS birthed MeshFS.
+- **[Use Cases & Benchmarks](USE_CASES.md)**: FUSE Workstation mount, Rootless Podman, LXC containers, and live NVMe/WireGuard benchmarks.
+- **[Proxmox VE Integration](PROXMOX.md)**: Complete guide to using MeshFS as a shared storage plugin for KVM virtual machines and LXC on Proxmox VE 8.x/9.x.
 
 ---
 

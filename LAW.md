@@ -1,5 +1,7 @@
 # Law — podmesh-meshfs
 
+> *"Look at what the modern Linux kernel already offers natively and harness it without intermediaries."* — Shaper OS Law
+
 The following architectural invariants govern `podmesh-meshfs` (v2.3.0) across its Rust daemon, FUSE filesystem, REST API, and P2P replication engine. Every change must preserve these laws without exception.
 
 ## 1. 4 MB FastCDC / SHA-256 Content-Addressable Verification
