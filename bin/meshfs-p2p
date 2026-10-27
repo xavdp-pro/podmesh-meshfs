@@ -48,6 +48,40 @@ class MeshFSP2PEngine:
         os.makedirs(CAS_DIR, exist_ok=True)
         os.makedirs(VOL_DIR, exist_ok=True)
         os.makedirs(META_DIR, exist_ok=True)
+        self.pool_meta = self._load_pool_meta()
+
+    def _load_pool_meta(self):
+        pool_file = os.path.join(META_DIR, "pool.json")
+        if os.path.exists(pool_file):
+            try:
+                with open(pool_file, "r") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {
+            "pool_id": "meshfs-pool-sovereign-01",
+            "quota_gb": 5.0,
+            "quota_bytes": 5 * 1024 * 1024 * 1024,
+            "status": "ONLINE"
+        }
+
+    def set_quota(self, gb):
+        """Sets cluster pool quota in GB and propagates to all peers"""
+        quota_bytes = int(float(gb) * 1024 * 1024 * 1024)
+        self.pool_meta["quota_gb"] = float(gb)
+        self.pool_meta["quota_bytes"] = quota_bytes
+        self.pool_meta["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
+        pool_file = os.path.join(META_DIR, "pool.json")
+        with open(pool_file, "w") as f:
+            json.dump(self.pool_meta, f, indent=2)
+        print(f"[*] Quota local configuré : {gb} Go ({quota_bytes} octets).")
+        for peer in self.peers:
+            ip = peer["host"]
+            subprocess.run([
+                "scp", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=3",
+                pool_file, f"root@{ip}:{REMOTE_META_DIR}/pool.json"
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"[SUCCÈS] Quota {gb} Go propagé avec succès à l'ensemble du cluster P2P !")
 
     def _detect_local_ip(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -70,7 +104,14 @@ class MeshFSP2PEngine:
         vols = [f for f in os.listdir(VOL_DIR) if os.path.isfile(os.path.join(VOL_DIR, f))]
         
         total_bytes = sum(os.path.getsize(os.path.join(CAS_DIR, f)) for f in chunks)
-        print(f"Local CAS Store: {len(chunks)} chunks ({total_bytes / (1024*1024):.2f} MB), {len(metas)} manifests, {len(vols)} volumes")
+        quota_bytes = self.pool_meta.get("quota_bytes", 5 * 1024 * 1024 * 1024)
+        quota_gb = quota_bytes / (1024 * 1024 * 1024)
+        pct = (total_bytes / quota_bytes) * 100 if quota_bytes > 0 else 0
+        avail_gb = (quota_bytes - total_bytes) / (1024 * 1024 * 1024)
+        
+        print(f"Pool Quota Alloué : {quota_gb:.2f} Go ({quota_bytes} octets)")
+        print(f"Espace Utilisé    : {total_bytes / (1024*1024):.2f} Mo / {quota_gb:.2f} Go ({pct:.2f}% utilisé, {avail_gb:.2f} Go disponibles)")
+        print(f"Magasin Local     : {len(chunks)} chunks CAS, {len(metas)} manifestes, {len(vols)} volumes")
         
         print("\nPeer Interconnect & Latency:")
         for peer in self.peers:
@@ -91,6 +132,14 @@ class MeshFSP2PEngine:
             raise FileNotFoundError(f"Source file {source_path} not found")
 
         file_size = os.path.getsize(source_path)
+        
+        # Vérification du quota de pool déclaré
+        chunks = [f for f in os.listdir(CAS_DIR) if f.endswith(".chunk")]
+        current_bytes = sum(os.path.getsize(os.path.join(CAS_DIR, f)) for f in chunks)
+        quota_bytes = self.pool_meta.get("quota_bytes", 5 * 1024 * 1024 * 1024)
+        if current_bytes + file_size > quota_bytes:
+            raise RuntimeError(f"ÉCHEC: Quota de pool MeshFS dépassé ! Requis: {(current_bytes + file_size)/(1024**3):.2f} Go, Quota: {quota_bytes/(1024**3):.2f} Go")
+
         start_time = time.time()
         print(f"[*] Ingestion P2P de '{target_rel_path}' ({file_size} octets / {file_size / (1024*1024):.2f} Mo)...")
 
@@ -350,7 +399,9 @@ if __name__ == "__main__":
     elif len(sys.argv) > 1 and sys.argv[1] == "benchmark":
         sz = int(sys.argv[2]) if len(sys.argv) > 2 else 10
         engine.benchmark(sz)
+    elif len(sys.argv) > 2 and sys.argv[1] == "set-quota":
+        engine.set_quota(sys.argv[2])
     elif len(sys.argv) > 2 and sys.argv[1] in ("export", "materialize"):
         engine.export_all(sys.argv[2])
     else:
-        print("Usage: meshfs-p2p [status | write <src> <target_name> | read <merkle> <dst> | sync | benchmark <size_mb> | export <target_dir>]")
+        print("Usage: meshfs-p2p [status | set-quota <gb> | write <src> <target_name> | read <merkle> <dst> | sync | benchmark <size_mb> | export <target_dir>]")
