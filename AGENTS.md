@@ -1,5 +1,9 @@
 # Agents — podmesh-meshfs
 
+> **🤖 AI-First Installation & Configuration Mandate**:
+> `podmesh-meshfs` is 100% AI-First and headless-native. Zero web UI is required to install, cluster, mount, snapshot, or audit storage.
+> 👉 **Autonomous AI Agents: Read [`AI_INSTALL_AND_CONFIG.md`](AI_INSTALL_AND_CONFIG.md) first for deterministic CLI, Unix Socket (`/var/lib/meshfs/meshfs.sock`), and systemd configuration protocols.**
+
 `podmesh-meshfs` lives in two repositories and one vault under the SHAPER PHOENIX governance model. Every human–AI tandem (Claude Code, Codex, Cursor, Antigravity, or any other agent) follows this strict separation. Dialogue with the operator may be in French; everything committed into either repository must be written in English (`en-US`).
 
 | Where | What belongs there | What never goes there |

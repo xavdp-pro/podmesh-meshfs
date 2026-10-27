@@ -8,6 +8,7 @@
 
 ## Technical Documentation & Guides
 
+- **[🤖 AI-First Installation & Configuration (`AI_INSTALL_AND_CONFIG.md`)](AI_INSTALL_AND_CONFIG.md)**: Deterministic headless installation, cluster bootstrap, Unix socket IPC, and 4 MB CAS operations for AI agents (zero web UI required).
 - **[Genesis Story](GENESIS.md)**: How solving immutable container backup in PMBS birthed MeshFS.
 - **[Use Cases & Benchmarks](USE_CASES.md)**: FUSE Workstation mount, Rootless Podman, LXC containers, and live NVMe/WireGuard benchmarks.
 - **[Proxmox VE Integration](PROXMOX.md)**: Complete guide to using MeshFS as a shared storage plugin for KVM virtual machines and LXC on Proxmox VE 8.x/9.x.
