@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MeshFS P2P Replicated Engine v2.3.0 (Pure Peer-to-Peer Storage Engine)
+MeshFS P2P Replicated Engine v2.4.0 (Pure Peer-to-Peer Storage Engine)
 - Cluster: 3 Nodes on physical host p4 (192.168.10.246)
     Node 1: 192.168.10.140 (meshfs-p2p-node1)
     Node 2: 192.168.10.143 (meshfs-p2p-node2)
@@ -95,7 +95,7 @@ class MeshFSP2PEngine:
 
     def status(self):
         """Displays cluster membership, peer latency, and local storage stats"""
-        print(f"=== MeshFS P2P Cluster Status (v2.3.0) ===")
+        print(f"=== MeshFS P2P Cluster Status (v2.4.0) ===")
         print(f"Local Node: {self.my_node['name']} ({self.my_node['id']} @ {self.my_ip})")
         
         # Local stats

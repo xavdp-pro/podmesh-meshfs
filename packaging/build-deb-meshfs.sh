@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# PodMesh MeshFS v2.3.0 — Debian 13 (Trixie) Package Builder
+# PodMesh MeshFS v2.4.0 — Debian 13 (Trixie) Package Builder
 # Hardened under Claude Fable 5.1 & GPT-6 Astra Counter-Reviews:
 #  - Enforces 0755 on ./ and OS directories; 0700 on /etc/meshfs & /var/lib/meshfs
 #  - Debian 13 usrmerge compliance (/usr/lib/systemd/system/meshfs.service)
@@ -12,7 +12,7 @@ set -euo pipefail
 umask 0022
 
 PKG_NAME="podmesh-meshfs"
-PKG_VERSION="2.3.0"
+PKG_VERSION="2.4.0"
 PKG_ARCH="amd64"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="$(mktemp -d /tmp/build-${PKG_NAME}.XXXXXX)"
@@ -50,7 +50,7 @@ fi
 # 2. Default configuration (/etc/meshfs/config.json)
 cat << 'EOF' > "${BUILD_DIR}/etc/meshfs/config.json"
 {
-  "version": "2.3.0",
+  "version": "2.4.0",
   "clusterName": "meshfs-cluster",
   "port": 7443,
   "dataDir": "/var/lib/meshfs",
@@ -71,7 +71,7 @@ chmod 0644 "${BUILD_DIR}/DEBIAN/conffiles"
 # 4. Debian 13 usrmerge systemd unit (/usr/lib/systemd/system/meshfs.service)
 cat << 'EOF' > "${BUILD_DIR}/usr/lib/systemd/system/meshfs.service"
 [Unit]
-Description=PodMesh MeshFS Pure Rust 4MB CAS Distributed Filesystem Daemon (v2.3.0)
+Description=PodMesh MeshFS Pure Rust 4MB CAS Distributed Filesystem Daemon (v2.4.0)
 After=network-online.target local-fs.target
 Wants=network-online.target
 
@@ -107,10 +107,10 @@ Priority: optional
 Architecture: ${PKG_ARCH}
 Installed-Size: ${INSTALLED_SIZE}
 Depends: libc6 (>= 2.36), systemd, fuse3
-Recommends: podmesh-pve-plugin (>= 2.3.0), python3
+Recommends: podmesh-pve-plugin (>= 2.4.0), python3
 Maintainer: Xavier DP <xavier@xavdp.pro>
 Homepage: https://meshfs.xavdp.pro
-Description: PodMesh MeshFS — Pure Rust 4MB CAS Distributed Filesystem (v2.3.0)
+Description: PodMesh MeshFS — Pure Rust 4MB CAS Distributed Filesystem (v2.4.0)
  Ultra-lightweight distributed and peer-to-peer filesystem operating seamlessly
  from 1 standalone node up to N-node clusters. Features 4 MiB SHA-256 Content
  Addressable Storage (CAS), Merkle Copy-on-Write snapshots, Unix Domain Socket
@@ -136,7 +136,7 @@ if [ "${1:-}" = "configure" ]; then
         systemctl daemon-reload || true
         systemctl enable meshfs.service || true
         systemctl restart meshfs.service || true
-        echo "[MeshFS] Service meshfs.service (v2.3.0) enabled and started on :7443 + /var/lib/meshfs/meshfs.sock."
+        echo "[MeshFS] Service meshfs.service (v2.4.0) enabled and started on :7443 + /var/lib/meshfs/meshfs.sock."
     fi
 fi
 exit 0

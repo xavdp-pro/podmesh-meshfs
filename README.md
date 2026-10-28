@@ -1,8 +1,8 @@
-# podmesh-meshfs (v2.3.0)
+# podmesh-meshfs (v2.4.0)
 
 > *"Look at what the modern Linux kernel already offers natively and harness it without intermediaries."* — Shaper OS Law  
-> **Autonomous 4 MB Content-Addressable Distributed & Peer-to-Peer Storage Engine for Podman, Proxmox VE, and Linux Hosts.**  
-> *Ultra-lightweight sovereign alternative to CephFS: scales from 1 standalone node to N-node clusters with SHA-256 deduplication, Merkle Copy-on-Write snapshots, FUSE POSIX mounting, and zero-server P2P gossip replication.*
+> **Universal Multi-Platform (Proxmox VE + TrueNAS + Synology + Windows + Podman) 4 MB Content-Addressable & Distributed Storage Engine.**  
+> *Sovereign alternative to CephFS: atomic chunk reception, FastCDC / BLAKE3, Merkle Copy-on-Write snapshots, FUSE POSIX mounting, and WireGuard Dual-Hub P2P replication without Single Point of Failure (SPOF).*
 
 ---
 
@@ -17,15 +17,17 @@
 
 ## Overview
 
-`podmesh-meshfs` is the dedicated distributed storage and CAS filesystem engine of the PodMesh and SHAPER PHOENIX ecosystem. Extracted at **v2.3.0** as a standalone component, it operates either **with or without PodMesh** on any Debian/Linux server, Proxmox VE hypervisor, or Podman container host.
+`podmesh-meshfs` is the dedicated distributed storage and CAS filesystem engine of the PodMesh and SHAPER PHOENIX ecosystem. Transitioning from the experimental v2.3.0 demonstrator to **v2.4.0 universal multi-storage architecture**, it operates across heterogeneous storage fabrics including Proxmox VE, TrueNAS, Synology, Windows, and Linux/Podman container hosts.
 
 ### Key Capabilities
 
-- **4 MB SHA-256 Content-Addressable Storage (CAS)**: Automatic chunk-level deduplication across volumes, virtual machine disks, container rootfs trees, and backups.
-- **Cryptographic Merkle Tree Snapshots**: Instantaneous Copy-on-Write (CoW) snapshots sealed by a SHA-256 Merkle root guaranteeing bit-exact integrity.
+- **Universal Multi-Platform Support**: Seamless integration across Proxmox VE hypervisors, TrueNAS CORE/SCALE, Synology DSM, Windows Server / Hyper-V, and bare-metal Linux Podman nodes.
+- **Atomic Chunk Ingestion & FastCDC / BLAKE3**: Content-Defined Chunking (FastCDC) with BLAKE3 cryptographic verification and atomic staging, eliminating write tearing and achieving wire-speed throughput.
+- **4 MB Content-Addressable Storage (CAS)**: Automatic chunk-level deduplication across volumes, virtual machine disks, container rootfs trees, and backups.
+- **Cryptographic Merkle Tree Snapshots**: Instantaneous Copy-on-Write (CoW) snapshots sealed by a cryptographic Merkle root guaranteeing bit-exact integrity.
 - **Dual Execution Modes**:
   1. **Native Rust Daemon (`meshfs`)**: High-performance Rust binary (< 8 MB RAM) providing a FUSE POSIX filesystem (`fuser`), OpenRaft consensus (`openraft` + `rusqlite`), kernel `FICLONE` zero-copy reflinks, Unix Domain Socket IPC, and an HTTP REST API on port `7443`.
-  2. **Pure Peer-to-Peer Engine (`bin/meshfs-p2p`)**: Zero-central-server P2P chunk replication over mutually authenticated LAN peers with direct volume materialization for rootless/rootful Podman containers.
+  2. **Pure Peer-to-Peer Engine (`bin/meshfs-p2p`)**: Zero-central-server P2P chunk replication over mutually authenticated WireGuard Dual-Hub mesh topology without SPOF.
 - **Native Proxmox VE & PMBS Integration**: Pairs seamlessly with [`podmesh-pve-plugin`](https://github.com/xavdp-pro/podmesh-pve-plugin) for shared KVM/LXC storage and with PodMesh Backup Server (PMBS) for zero-rechunking incremental backups.
 
 ---
@@ -34,14 +36,14 @@
 
 ```text
 +-----------------------------------------------------------------------+
-|                       podmesh-meshfs (v2.3.0)                         |
+|                       podmesh-meshfs (v2.4.0)                         |
 +-----------------------------------+-----------------------------------+
 |     Pure Rust Daemon (meshfs)     |    Standalone P2P (meshfs-p2p)    |
 |                                   |                                   |
-|  - FUSE POSIX Mount (src/fuse.rs) |  - Zero Central Hub               |
-|  - REST API :7443 (src/server.rs) |  - 4 MB CAS Chunk Slicer          |
-|  - OpenRaft Log (src/cluster.rs)  |  - SHA-256 Merkle Manifests       |
-|  - Merkle CoW (src/merkle.rs)     |  - Parallel LAN Peer Gossip       |
+|  - FUSE POSIX Mount (src/fuse.rs) |  - WireGuard Dual-Hub (No SPOF)   |
+|  - REST API :7443 (src/server.rs) |  - FastCDC / BLAKE3 & 4MB CAS     |
+|  - OpenRaft Log (src/cluster.rs)  |  - Atomic Chunk Reception Engine  |
+|  - Merkle CoW (src/merkle.rs)     |  - Multi-Platform Storage Fabrics |
 |  - FICLONE Reflink (src/engine.rs)|  - Podman Volume Export           |
 +-----------------------------------+-----------------------------------+
                                     |
