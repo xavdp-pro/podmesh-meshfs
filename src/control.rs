@@ -27,6 +27,19 @@ pub enum ControlRequest {
         #[serde(default)]
         deep_sha_verify: bool,
     },
+    #[serde(rename = "gc")]
+    Gc {
+        #[serde(default)]
+        grace_seconds: u64,
+        #[serde(default)]
+        dry_run: bool,
+    },
+    #[serde(rename = "quota")]
+    Quota {
+        volume: String,
+        #[serde(default)]
+        max_bytes: Option<u64>,
+    },
 }
 
 /// Result of a deep storage integrity inspection.
@@ -206,6 +219,45 @@ pub async fn start_control_socket(engine: MeshFSEngine, socket_path: PathBuf) ->
                                 }) => {
                                     let rep = engine.audit_integrity(volume.as_deref(), deep_sha_verify).await;
                                     serde_json::to_value(rep).unwrap_or_default()
+                                }
+                                Ok(ControlRequest::Gc {
+                                    grace_seconds,
+                                    dry_run,
+                                }) => {
+                                    let rep = engine.run_universal_cas_gc(grace_seconds, dry_run).await;
+                                    serde_json::to_value(rep).unwrap_or_default()
+                                }
+                                Ok(ControlRequest::Quota { volume, max_bytes }) => {
+                                    if let Some(mb) = max_bytes {
+                                        match engine.set_volume_quota(&volume, Some(mb)).await {
+                                            Ok(v) => serde_json::json!({
+                                                "status": "ok",
+                                                "action": "quota.set",
+                                                "volume": v.name,
+                                                "logical_used_bytes": v.total_bytes(),
+                                                "max_bytes": v.max_bytes.unwrap_or(0),
+                                            }),
+                                            Err(e) => serde_json::json!({
+                                                "status": "error",
+                                                "message": e.to_string(),
+                                            }),
+                                        }
+                                    } else {
+                                        let state = engine.state.read().await;
+                                        if let Some(v) = state.volumes.get(&volume) {
+                                            serde_json::json!({
+                                                "status": "ok",
+                                                "volume": v.name,
+                                                "logical_used_bytes": v.total_bytes(),
+                                                "max_bytes": v.max_bytes.unwrap_or(0),
+                                            })
+                                        } else {
+                                            serde_json::json!({
+                                                "status": "error",
+                                                "message": format!("Volume '{}' introuvable", volume),
+                                            })
+                                        }
+                                    }
                                 }
                                 Err(_) => {
                                     // Fallback text commands: "ping", "status", "inspect"

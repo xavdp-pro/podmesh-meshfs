@@ -3,8 +3,9 @@
 //! and 100% Proxmox VE Plugin compatibility.
 
 use clap::Parser;
-use meshfs::cli::{Cli, Commands, VolumeSubcommand};
+use meshfs::cli::{Cli, Commands, QuotaSubcommand, VolumeSubcommand};
 use meshfs::control::{query_control_socket, start_control_socket, ControlRequest};
+use meshfs::docker_plugin::start_docker_volume_plugin;
 use meshfs::engine::MeshFSEngine;
 use meshfs::server::create_router;
 use std::fs;
@@ -85,6 +86,13 @@ async fn main() -> ExitCode {
                 error!(path = %d.socket.display(), "Impossible d'initialiser le socket Unix de contrôle: {}", e);
             } else {
                 info!(socket = %d.socket.display(), "Socket de contrôle local IPC actif");
+            }
+
+            // Start native Podman/Docker Volume Plugin listener (`/run/docker/plugins/meshfs.sock`)
+            if let Err(e) = start_docker_volume_plugin(engine.clone(), d.plugin_socket.clone()).await {
+                error!(path = %d.plugin_socket.display(), "Impossible d'initialiser le plugin volume Podman/Docker: {}", e);
+            } else {
+                info!(socket = %d.plugin_socket.display(), "Plugin volume Podman/Docker (`--driver meshfs`) actif");
             }
 
             let app = create_router(engine);
@@ -420,6 +428,99 @@ async fn main() -> ExitCode {
                 }
             }
         }
+
+        Commands::Gc(gc) => {
+            if let Some(sock) = resolve_socket(gc.socket.as_deref()) {
+                let req = ControlRequest::Gc {
+                    grace_seconds: gc.grace_seconds,
+                    dry_run: gc.dry_run,
+                };
+                match query_control_socket(&sock, &req).await {
+                    Ok(resp) => {
+                        println!("{}", resp);
+                        return ExitCode::SUCCESS;
+                    }
+                    Err(e) => {
+                        error!("Erreur socket Unix ({}): {}", sock.display(), e);
+                    }
+                }
+            }
+            let client = reqwest::Client::new();
+            let url = format!("{}/api/v1/meshfs/gc", gc.remote.trim_end_matches('/'));
+            match client
+                .post(&url)
+                .json(&serde_json::json!({
+                    "grace_seconds": gc.grace_seconds,
+                    "dry_run": gc.dry_run,
+                }))
+                .send()
+                .await
+            {
+                Ok(resp) => match resp.text().await {
+                    Ok(body) => {
+                        println!("{}", body);
+                        return ExitCode::SUCCESS;
+                    }
+                    Err(e) => {
+                        eprintln!("Erreur lecture réponse GC: {}", e);
+                        return ExitCode::FAILURE;
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Erreur appel GC HTTP: {}", e);
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
+
+        Commands::Quota(q) => match q.action {
+            QuotaSubcommand::Set {
+                volume,
+                max_bytes,
+                socket,
+            } => {
+                if let Some(sock) = resolve_socket(socket.as_deref()) {
+                    let req = ControlRequest::Quota {
+                        volume,
+                        max_bytes: Some(max_bytes),
+                    };
+                    match query_control_socket(&sock, &req).await {
+                        Ok(resp) => {
+                            println!("{}", resp);
+                            return ExitCode::SUCCESS;
+                        }
+                        Err(e) => {
+                            eprintln!("Erreur socket Unix: {}", e);
+                            return ExitCode::FAILURE;
+                        }
+                    }
+                } else {
+                    eprintln!("Socket Unix introuvable (/var/lib/meshfs/meshfs.sock)");
+                    return ExitCode::FAILURE;
+                }
+            }
+            QuotaSubcommand::Get { volume, socket } => {
+                if let Some(sock) = resolve_socket(socket.as_deref()) {
+                    let req = ControlRequest::Quota {
+                        volume,
+                        max_bytes: None,
+                    };
+                    match query_control_socket(&sock, &req).await {
+                        Ok(resp) => {
+                            println!("{}", resp);
+                            return ExitCode::SUCCESS;
+                        }
+                        Err(e) => {
+                            eprintln!("Erreur socket Unix: {}", e);
+                            return ExitCode::FAILURE;
+                        }
+                    }
+                } else {
+                    eprintln!("Socket Unix introuvable (/var/lib/meshfs/meshfs.sock)");
+                    return ExitCode::FAILURE;
+                }
+            }
+        },
     }
 
     ExitCode::SUCCESS

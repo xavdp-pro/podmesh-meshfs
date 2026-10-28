@@ -38,6 +38,7 @@ mkdir -p -m 0700 "${BUILD_DIR}/var/lib/meshfs"
 mkdir -p -m 0700 "${BUILD_DIR}/var/lib/meshfs/chunks"
 mkdir -p -m 0700 "${BUILD_DIR}/var/lib/meshfs/meta"
 mkdir -p -m 0700 "${BUILD_DIR}/var/lib/meshfs/volumes"
+mkdir -p -m 0700 "${BUILD_DIR}/var/lib/meshfs/mounts"
 mkdir -p "${DIST_DIR}"
 
 # 1. Install binaries (/usr/bin/meshfs + /usr/bin/meshfs-p2p)
@@ -122,7 +123,8 @@ cat << 'EOF' > "${BUILD_DIR}/DEBIAN/postinst"
 #!/usr/bin/env bash
 set -euo pipefail
 if [ "${1:-}" = "configure" ]; then
-    install -d -m 0700 -o root -g root /etc/meshfs /var/lib/meshfs /var/lib/meshfs/chunks /var/lib/meshfs/meta /var/lib/meshfs/volumes
+    install -d -m 0700 -o root -g root /etc/meshfs /var/lib/meshfs /var/lib/meshfs/chunks /var/lib/meshfs/meta /var/lib/meshfs/volumes /var/lib/meshfs/mounts
+    install -d -m 0755 -o root -g root /run/docker/plugins /etc/docker/plugins
     if [ -f /etc/meshfs/config.json ]; then
         chmod 0600 /etc/meshfs/config.json
         chown root:root /etc/meshfs/config.json
@@ -153,7 +155,7 @@ if [ "${1:-}" = "remove" ]; then
         systemctl stop meshfs.service 2>/dev/null || true
         systemctl disable meshfs.service 2>/dev/null || true
     fi
-    rm -f /var/lib/meshfs/meshfs.sock 2>/dev/null || true
+    rm -f /var/lib/meshfs/meshfs.sock /run/docker/plugins/meshfs.sock 2>/dev/null || true
 fi
 exit 0
 EOF

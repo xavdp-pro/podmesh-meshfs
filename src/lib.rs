@@ -26,3 +26,4 @@ pub use volume::{Snapshot, Volume};
 
 pub mod live;
 pub mod fuse;
+pub mod docker_plugin;
