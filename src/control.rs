@@ -2,7 +2,6 @@
 //! Provides local Unix Domain Socket IPC for low-latency out-of-band monitoring,
 //! health checks, and deep cryptographic integrity audits.
 
-use crate::chunk::sha256_digest;
 use crate::engine::MeshFSEngine;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -107,8 +106,8 @@ impl MeshFSEngine {
                         match fs::read(&chunk_path) {
                             Ok(bytes) => {
                                 let clean_id = crate::chunk::ChunkStore::normalize_id(&chunk_ref.id);
-                                let calculated = sha256_digest(&bytes);
-                                if calculated != clean_id {
+                                if !crate::chunk::verify_cas_digest(&bytes, clean_id) {
+                                    let calculated = crate::chunk::blake3_digest(&bytes);
                                     error!(
                                         path = %path,
                                         chunk = %chunk_ref.id,

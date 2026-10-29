@@ -1,5 +1,5 @@
 //! CAS (Content-Addressable Storage) Chunk Store for MeshFS
-//! Splits data into immutable 4MB chunks indexed by their SHA-256 digests.
+//! Splits data into immutable 4MB chunks indexed by their BLAKE3 digests (with SHA-256 backward compatibility).
 
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
@@ -12,11 +12,21 @@ use std::sync::{
 
 pub const CHUNK_SIZE: usize = 4 * 1024 * 1024; // 4MB canonical chunks
 
-/// Computes SHA-256 digest string in lower hex.
+/// Computes BLAKE3 digest string in lower hex (primary CAS chunk digest for MeshFS v2.4+).
+pub fn blake3_digest(data: &[u8]) -> String {
+    blake3::hash(data).to_hex().to_string()
+}
+
+/// Computes SHA-256 digest string in lower hex (legacy v2.3 compatibility & metadata).
 pub fn sha256_digest(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);
     hex::encode(hasher.finalize())
+}
+
+/// Verifies chunk integrity against BLAKE3 (primary v2.4+) or SHA-256 (backward-compatible v2.3).
+pub fn verify_cas_digest(data: &[u8], expected_clean: &str) -> bool {
+    blake3_digest(data) == expected_clean || sha256_digest(data) == expected_clean
 }
 
 /// Metadata describing a chunk slice within a file.
@@ -71,9 +81,11 @@ impl ChunkStore {
         })
     }
 
-    /// Strips any "sha256:" prefix and ensures clean lowercase hash.
+    /// Strips any "blake3:" or "sha256:" prefix and ensures clean lowercase hash.
     pub fn normalize_id(id: &str) -> &str {
-        id.strip_prefix("sha256:").unwrap_or(id)
+        id.strip_prefix("blake3:")
+            .or_else(|| id.strip_prefix("sha256:"))
+            .unwrap_or(id)
     }
 
     /// Resolves disk path for a given chunk hash: <chunks_dir>/<prefix>/<hash>
@@ -114,21 +126,21 @@ impl ChunkStore {
         Ok(())
     }
 
-    /// Atomically writes a chunk to disk. If identical chunk already exists, reuses it without re-writing.
+    /// Atomically writes a chunk to disk using BLAKE3 CAS addressing. If identical chunk already exists, reuses it without re-writing.
     pub fn write_chunk(&self, data: &[u8]) -> io::Result<String> {
-        let digest = sha256_digest(data);
+        let digest = blake3_digest(data);
         let target_file = self.chunk_path(&digest);
 
         if target_file.exists() {
             if let Ok(existing) = fs::read(&target_file) {
-                if existing.len() <= CHUNK_SIZE && sha256_digest(&existing) == digest {
-                    return Ok(format!("sha256:{}", digest));
+                if existing.len() <= CHUNK_SIZE && blake3_digest(&existing) == digest {
+                    return Ok(format!("blake3:{}", digest));
                 }
             }
         }
 
         self.write_verified_chunk_raw(&digest, data)?;
-        Ok(format!("sha256:{}", digest))
+        Ok(format!("blake3:{}", digest))
     }
 
     fn try_heal_from_peers(&self, clean: &str) -> Option<Vec<u8>> {
@@ -153,7 +165,8 @@ impl ChunkStore {
                     if let Ok(resp) = client.get(url).send() {
                         if resp.status().is_success() {
                             if let Ok(bytes) = resp.bytes() {
-                                if bytes.len() <= CHUNK_SIZE && sha256_digest(&bytes) == clean_owned
+                                if bytes.len() <= CHUNK_SIZE
+                                    && verify_cas_digest(&bytes, &clean_owned)
                                 {
                                     tracing::warn!(
                                         chunk = %clean_owned,
@@ -217,10 +230,10 @@ impl ChunkStore {
             ));
         }
 
-        // Verify cryptographic hash on read (protection against bit-rot)
+        // Verify cryptographic hash on read (BLAKE3 primary, SHA-256 legacy compatibility)
         let expected = Self::normalize_id(chunk_id);
-        let actual = sha256_digest(&buffer);
-        if actual != expected {
+        if !verify_cas_digest(&buffer, expected) {
+            let actual = blake3_digest(&buffer);
             if let Some(healed) = self.try_heal_from_peers(id) {
                 return Ok(healed);
             }
@@ -273,7 +286,7 @@ mod tests {
 
         let data1 = b"Hello Pure Rust MeshFS 2026!";
         let chunk_id1 = store.write_chunk(data1).unwrap();
-        assert!(chunk_id1.starts_with("sha256:"));
+        assert!(chunk_id1.starts_with("blake3:"));
 
         // Verify deduplication: writing exact same data returns identical ID
         let chunk_id2 = store.write_chunk(data1).unwrap();

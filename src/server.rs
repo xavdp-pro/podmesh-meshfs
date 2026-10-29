@@ -217,12 +217,13 @@ async fn cas_chunk_handler(
     match std::fs::read(&target) {
         Ok(bytes)
             if bytes.len() <= crate::chunk::CHUNK_SIZE
-                && crate::chunk::sha256_digest(&bytes) == clean =>
+                && crate::chunk::verify_cas_digest(&bytes, &clean) =>
         {
             (
                 StatusCode::OK,
                 [
                     ("content-type", "application/octet-stream"),
+                    ("x-podmesh-cas-blake3", clean.as_str()),
                     ("x-podmesh-cas-sha256", clean.as_str()),
                 ],
                 bytes,

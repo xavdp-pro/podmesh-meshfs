@@ -62,7 +62,7 @@ fn collect_cas_hashes_from_value(
 ) {
     match val {
         serde_json::Value::String(s) => {
-            let clean = s.strip_prefix("sha256:").unwrap_or(s.as_str());
+            let clean = ChunkStore::normalize_id(s.as_str());
             if clean.len() == 64
                 && clean
                     .bytes()
@@ -79,7 +79,12 @@ fn collect_cas_hashes_from_value(
         serde_json::Value::Object(map) => {
             for (k, v) in map {
                 if let serde_json::Value::String(s) = v {
-                    if s.starts_with("sha256:") || k == "id" || k == "chunk" || k == "hash" {
+                    if s.starts_with("blake3:")
+                        || s.starts_with("sha256:")
+                        || k == "id"
+                        || k == "chunk"
+                        || k == "hash"
+                    {
                         collect_cas_hashes_from_value(v, referenced);
                     }
                 } else {
