@@ -450,7 +450,7 @@ async fn download_file_handler(
                 .into_response()
         }
     };
-    if inode.digest.starts_with("merkle-sha256:") {
+    if inode.digest.starts_with("merkle-blake3:") || inode.digest.starts_with("merkle-sha256:") {
         return (
             StatusCode::CONFLICT,
             "live files require the range interface or mount; digest is a manifest hash",
@@ -459,13 +459,12 @@ async fn download_file_handler(
     }
     let size = inode.size;
     let digest = inode.digest.clone();
-    use sha2::{Digest, Sha256};
     let stream = futures_util::stream::try_unfold(
-        (engine, inode, 0usize, 0u64, Sha256::new()),
+        (engine, inode, 0usize, 0u64, blake3::Hasher::new()),
         |(engine, inode, index, offset, mut hash)| async move {
             if index == inode.chunks.len() {
                 if offset != inode.size
-                    || format!("sha256:{}", hex::encode(hash.finalize())) != inode.digest
+                    || format!("blake3:{}", hash.finalize().to_hex()) != inode.digest
                 {
                     return Err(std::io::Error::other("file digest mismatch"));
                 }
@@ -480,7 +479,7 @@ async fn download_file_handler(
             let offset = offset + bytes.len() as u64;
             if index + 1 == inode.chunks.len()
                 && (offset != inode.size
-                    || format!("sha256:{}", hex::encode(hash.clone().finalize())) != inode.digest)
+                    || format!("blake3:{}", hash.clone().finalize().to_hex()) != inode.digest)
             {
                 return Err(std::io::Error::other("file digest mismatch"));
             }

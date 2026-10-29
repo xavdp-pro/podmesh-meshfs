@@ -388,8 +388,7 @@ async fn main() -> ExitCode {
             } else {
                 Box::new(io::stdout())
             };
-            use sha2::{Digest, Sha256};
-            let mut hash = Sha256::new();
+            let mut hash = blake3::Hasher::new();
             loop {
                 match response.chunk().await {
                     Ok(Some(bytes)) => {
@@ -408,7 +407,7 @@ async fn main() -> ExitCode {
             }
             if expected
                 .as_ref()
-                .is_some_and(|e| e != &format!("sha256:{}", hex::encode(hash.finalize())))
+                .is_some_and(|e| e != &format!("blake3:{}", hash.finalize().to_hex()))
             {
                 eprintln!("Download digest mismatch");
                 return ExitCode::FAILURE;

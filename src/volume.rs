@@ -104,7 +104,7 @@ mod tests {
     #[test]
     fn test_volume_snapshot_cow() {
         let mut vol = Volume::new("tank");
-        assert!(vol.merkle_root.starts_with("sha256:"));
+        assert!(vol.merkle_root.starts_with("blake3:"));
 
         vol.insert_file(Inode {
             revision: 0,

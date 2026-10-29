@@ -2,7 +2,7 @@
 //! Coordinates storage drivers, 4MB CAS chunking, Merkle DAG tracking,
 //! volume isolation, and peer node synchronization.
 
-use crate::chunk::{sha256_digest, ChunkRef, ChunkStore, CHUNK_SIZE};
+use crate::chunk::{blake3_digest, verify_cas_digest, ChunkRef, ChunkStore, CHUNK_SIZE};
 use crate::cluster::{Action, Cluster, MAX_INLINE_BYTES};
 use crate::merkle::Inode;
 use crate::storage::{StorageDriver, StorageMetrics};
@@ -596,7 +596,7 @@ impl MeshFSEngine {
         }
         let size = content.len() as u64;
         self.ensure_volume_quota(volume_name, file_path, size).await?;
-        let file_digest = format!("sha256:{}", sha256_digest(content));
+        let file_digest = format!("blake3:{}", blake3_digest(content));
         let mut chunks = Vec::new();
 
         let mut offset = 0usize;
@@ -645,11 +645,10 @@ impl MeshFSEngine {
         path: &str,
         mut reader: R,
     ) -> io::Result<Inode> {
-        use sha2::{Digest, Sha256};
         use tokio::io::AsyncReadExt;
         let mut buffer = vec![0; CHUNK_SIZE];
         let mut size = 0u64;
-        let mut hash = Sha256::new();
+        let mut hash = blake3::Hasher::new();
         let mut chunks = Vec::new();
         let mut staged = std::collections::HashSet::new();
         loop {
@@ -666,7 +665,7 @@ impl MeshFSEngine {
             }
             let bytes = &buffer[..used];
             hash.update(bytes);
-            let digest = format!("sha256:{}", sha256_digest(bytes));
+            let digest = format!("blake3:{}", blake3_digest(bytes));
             let id = if let Some(c) = self.cluster.get() {
                 if staged.contains(&digest) {
                     digest.clone()
@@ -701,7 +700,7 @@ impl MeshFSEngine {
             revision: 0,
             path: path.into(),
             size,
-            digest: format!("sha256:{}", hex::encode(hash.finalize())),
+            digest: format!("blake3:{}", hash.finalize().to_hex()),
             chunks_count: chunks.len(),
             chunks,
             updated_at: Utc::now().to_rfc3339(),
@@ -785,7 +784,7 @@ impl MeshFSEngine {
         }
 
         if buffer.len() as u64 != inode.size
-            || format!("sha256:{}", sha256_digest(&buffer)) != inode.digest
+            || !verify_cas_digest(&buffer, ChunkStore::normalize_id(&inode.digest))
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
