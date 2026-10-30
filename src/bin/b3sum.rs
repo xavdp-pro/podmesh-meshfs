@@ -17,6 +17,10 @@ fn hash_reader<R: Read>(mut r: R) -> io::Result<String> {
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        println!("b3sum {} (PodMesh Pure BLAKE3 SIMD)", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     let no_names = args.iter().any(|a| a == "--no-names");
     let files: Vec<&String> = args.iter().filter(|a| *a != "--no-names").collect();
     if files.is_empty() || (files.len() == 1 && files[0] == "-") {

@@ -41,8 +41,11 @@ mkdir -p -m 0700 "${BUILD_DIR}/var/lib/meshfs/volumes"
 mkdir -p -m 0700 "${BUILD_DIR}/var/lib/meshfs/mounts"
 mkdir -p "${DIST_DIR}"
 
-# 1. Install binaries (/usr/bin/meshfs + /usr/bin/meshfs-p2p)
+# 1. Install binaries (/usr/bin/meshfs + /usr/bin/b3sum + /usr/bin/meshfs-p2p)
 install -m 0755 "${RUST_BIN}" "${BUILD_DIR}/usr/bin/meshfs"
+if [ -f "${ROOT_DIR}/target/release/b3sum" ]; then
+    install -m 0755 "${ROOT_DIR}/target/release/b3sum" "${BUILD_DIR}/usr/bin/b3sum"
+fi
 if [ -f "${ROOT_DIR}/bin/meshfs-p2p" ]; then
     install -m 0755 "${ROOT_DIR}/bin/meshfs-p2p" "${BUILD_DIR}/usr/bin/meshfs-p2p"
 fi
@@ -50,7 +53,7 @@ fi
 # 2. Default configuration (/etc/meshfs/config.json)
 cat << 'EOF' > "${BUILD_DIR}/etc/meshfs/config.json"
 {
-  "version": "2.4.0",
+  "version": "2.4.1",
   "clusterName": "meshfs-cluster",
   "port": 7443,
   "dataDir": "/var/lib/meshfs",
@@ -71,7 +74,7 @@ chmod 0644 "${BUILD_DIR}/DEBIAN/conffiles"
 # 4. Debian 13 usrmerge systemd unit (/usr/lib/systemd/system/meshfs.service)
 cat << 'EOF' > "${BUILD_DIR}/usr/lib/systemd/system/meshfs.service"
 [Unit]
-Description=PodMesh MeshFS Pure Rust 4MB CAS Distributed Filesystem Daemon (v2.4.0)
+Description=PodMesh MeshFS Pure Rust 4MB CAS Distributed Filesystem Daemon (v2.4.1)
 After=network-online.target local-fs.target
 Wants=network-online.target
 
@@ -110,7 +113,7 @@ Depends: libc6 (>= 2.36), systemd, fuse3
 Recommends: podmesh-pve-plugin (>= 2.4.0), python3
 Maintainer: Xavier DP <xavier@xavdp.pro>
 Homepage: https://meshfs.xavdp.pro
-Description: PodMesh MeshFS — Pure Rust 4MB CAS Distributed Filesystem (v2.4.0)
+Description: PodMesh MeshFS — Pure Rust 4MB CAS Distributed Filesystem (v2.4.1)
  Ultra-lightweight distributed and peer-to-peer filesystem operating seamlessly
  from 1 standalone node up to N-node clusters. Features 4 MiB SHA-256 Content
  Addressable Storage (CAS), Merkle Copy-on-Write snapshots, Unix Domain Socket
@@ -136,7 +139,7 @@ if [ "${1:-}" = "configure" ]; then
         systemctl daemon-reload || true
         systemctl enable meshfs.service || true
         systemctl restart meshfs.service || true
-        echo "[MeshFS] Service meshfs.service (v2.4.0) enabled and started on :7443 + /var/lib/meshfs/meshfs.sock."
+        echo "[MeshFS] Service meshfs.service (v2.4.1) enabled and started on :7443 + /var/lib/meshfs/meshfs.sock."
     fi
 fi
 exit 0
