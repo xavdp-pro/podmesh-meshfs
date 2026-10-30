@@ -2,7 +2,7 @@
 
 > *"Look at what the modern Linux kernel already offers natively and harness it without intermediaries."* — Shaper OS Law
 
-The following architectural invariants govern `podmesh-meshfs` (v2.3.0) across its Rust daemon, FUSE filesystem, REST API, and P2P replication engine. Every change must preserve these laws without exception.
+The following architectural invariants govern `podmesh-meshfs` (v2.4.1) across its Rust daemon, FUSE filesystem, REST API, and P2P replication engine. Every change must preserve these laws without exception.
 
 ## 1. 4 MB FastCDC / SHA-256 Content-Addressable Verification
 - All stored payloads are segmented into bounded chunks (up to 4 MiB / `4 * 1024 * 1024` bytes).

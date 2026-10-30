@@ -1,4 +1,4 @@
-# podmesh-meshfs (v2.4.0)
+# podmesh-meshfs (v2.4.1)
 
 > *"Look at what the modern Linux kernel already offers natively and harness it without intermediaries."* — Shaper OS Law  
 > **Universal Multi-Platform (Proxmox VE + TrueNAS + Synology + Windows + Podman) 4 MB Content-Addressable & Distributed Storage Engine.**  
@@ -17,7 +17,7 @@
 
 ## Overview
 
-`podmesh-meshfs` is the dedicated distributed storage and CAS filesystem engine of the PodMesh and SHAPER PHOENIX ecosystem. Transitioning from the experimental v2.3.0 demonstrator to **v2.4.0 universal multi-storage architecture**, it operates across heterogeneous storage fabrics including Proxmox VE, TrueNAS, Synology, Windows, and Linux/Podman container hosts.
+`podmesh-meshfs` is the dedicated distributed storage and CAS filesystem engine of the PodMesh and SHAPER PHOENIX ecosystem. Transitioning from the experimental v2.4.1 demonstrator to **v2.4.0 universal multi-storage architecture**, it operates across heterogeneous storage fabrics including Proxmox VE, TrueNAS, Synology, Windows, and Linux/Podman container hosts.
 
 ### Key Capabilities
 
@@ -36,7 +36,7 @@
 
 ```text
 +-----------------------------------------------------------------------+
-|                       podmesh-meshfs (v2.4.0)                         |
+|                       podmesh-meshfs (v2.4.1)                         |
 +-----------------------------------+-----------------------------------+
 |     Pure Rust Daemon (meshfs)     |    Standalone P2P (meshfs-p2p)    |
 |                                   |                                   |
@@ -49,7 +49,7 @@
                                     |
                                     v
 +-----------------------------------------------------------------------+
-|             Canonical 4 MB SHA-256 CAS Pool & Merkle Store            |
+|             Canonical 4 MB BLAKE3 CAS Pool & Merkle Store            |
 |          /var/lib/meshfs/chunks/<sha256>.chunk & meta/<root>.json     |
 +-----------------------------------------------------------------------+
 ```
@@ -58,7 +58,7 @@
 
 | Path | Description |
 | :--- | :--- |
-| `Cargo.toml` | Rust package manifest (`meshfs` v2.3.0) |
+| `Cargo.toml` | Rust package manifest (`meshfs` v2.4.1) |
 | `src/main.rs` | Binary entrypoint and runtime dispatcher |
 | `src/cli.rs` | Command-line interface parser (`clap`) |
 | `src/engine.rs` | Core storage engine, atomic writes, and `FICLONE` reflink execution |
@@ -127,7 +127,7 @@ meshfs-p2p write /path/to/payload.raw volumes/vm-100-disk-0.raw
 meshfs-p2p read <merkle_root_sha256> /path/to/restored.raw
 
 # Mount CAS chunks directly inside a Podman container
-podman run --rm -v /var/lib/meshfs-pool/cas_chunks:/data:ro alpine ls -la /data
+podman run --rm -v /var/lib/meshfs/chunks:/data:ro alpine ls -la /data
 ```
 
 ---
